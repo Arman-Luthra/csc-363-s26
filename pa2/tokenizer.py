@@ -59,14 +59,14 @@ class Tokenizer:
                 while nextchar in {' ', '\n', '\r', '\t'}:
                     nextchar = self.cs.read()
                 if nextchar not in VALID_VARS:
-                    raise ValueError(f"invalid variable character: {nextchar!r}" if nextchar else "Unexpected end of input")
+                    raise ValueError(f"Invalid variable character: {nextchar!r}" if nextchar else "Unexpected end of input")
                 return Token(TokenType.INTDEC, lexeme=f"i{nextchar}", name=nextchar)
             case 'p':
                 nextchar = self.cs.read()
                 while nextchar in {' ', '\n', '\r', '\t'}:
                     nextchar = self.cs.read()
                 if nextchar not in VALID_VARS:
-                    raise ValueError(f"invald variable character: {nextchar!r}" if nextchar else "unexpected end of input")
+                    raise ValueError(f"Invalid variable character: {nextchar!r}" if nextchar else "Unexpected end of input")
                 return Token(TokenType.PRINT, lexeme=f"p{nextchar}", name=nextchar)
             case _:
                 pass
@@ -78,7 +78,7 @@ class Tokenizer:
 
         if char.isalpha():
             if char not in VALID_VARS:
-                raise ValueError(f"invalid variable character: {char}")
+                raise ValueError(f"Invalid variable character: {char}")
             return Token(TokenType.VARREF, lexeme=char)
            
         raise ValueError(f"Unexpected character: {char!r}")
@@ -89,7 +89,7 @@ class Tokenizer:
         digits: list[str] = []
         digits.append(firstchar)
         if firstchar == '0' and not self.cs.eof() and self.cs.peek().isdigit():
-            raise ValueError("int literal cannot have a leading zero")
+            raise ValueError("Integer literal cannot have a leading zero")
         while not self.cs.eof() and self.cs.peek().isdigit():
             digits.append(self.cs.read())
         lexeme = ''.join(digits)
