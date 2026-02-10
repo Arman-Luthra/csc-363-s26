@@ -41,34 +41,35 @@ class Tokenizer:
                 return Token(TokenType.ASSIGN, lexeme = f"{char}")
             
             case '(':
-                raise NotImplementedError
-                
-            case ')': 
-                raise NotImplementedError
-            
+                return Token(TokenType.LPAREN, lexeme=char)
+            case ')':
+                return Token(TokenType.RPAREN, lexeme=char)
             case '+':
-                raise NotImplementedError
-            
+                return Token(TokenType.PLUS, lexeme=char)
             case '-':
-                raise NotImplementedError
-            
+                return Token(TokenType.MINUS, lexeme=char)
             case '*':
-                raise NotImplementedError
-            
+                return Token(TokenType.TIMES, lexeme=char)
             case '/':
-                raise NotImplementedError
-            
+                return Token(TokenType.DIVIDE, lexeme=char)
             case '^':
-                raise NotImplementedError
-            
+                return Token(TokenType.EXPONENT, lexeme=char)
             case 'i':
-                raise NotImplementedError
-
+                nextchar = self.cs.read()
+                while nextchar in {' ', '\n', '\r', '\t'}:
+                    nextchar = self.cs.read()
+                if nextchar not in VALID_VARS:
+                    raise ValueError(f"invalid variable character: {nextchar!r}" if nextchar else "Unexpected end of input")
+                return Token(TokenType.INTDEC, lexeme=f"i{nextchar}", name=nextchar)
             case 'p':
-                raise NotImplementedError
-            
+                nextchar = self.cs.read()
+                while nextchar in {' ', '\n', '\r', '\t'}:
+                    nextchar = self.cs.read()
+                if nextchar not in VALID_VARS:
+                    raise ValueError(f"invald variable character: {nextchar!r}" if nextchar else "unexpected end of input")
+                return Token(TokenType.PRINT, lexeme=f"p{nextchar}", name=nextchar)
             case _:
-                pass # Move on to secondary inspection to handle digits, vars, error case
+                pass
 
         if char.isdigit():
             lexeme, intvalue = self.readintliteral(char)
@@ -77,24 +78,19 @@ class Tokenizer:
 
         if char.isalpha():
             if char not in VALID_VARS:
-                raise ValueError(f"Invalid variable character: {char}")
-            else:
-                raise NotImplementedError
+                raise ValueError(f"invalid variable character: {char}")
+            return Token(TokenType.VARREF, lexeme=char)
            
         raise ValueError(f"Unexpected character: {char!r}")
         
     
 
     def readintliteral(self, firstchar: str) -> tuple[str, int]:
-        
         digits: list[str] = []
         digits.append(firstchar)
-        #if CONDITION:
-        #    raise ValueError("Integer literal cannot have a leading zero")
-
-        #while not self.cs.eof() and SOMETHING:
-        #    digits.append(SOMETHING)
-
+        if firstchar == '0' and not self.cs.eof() and self.cs.peek().isdigit():
+            raise ValueError("int literal cannot have a leading zero")
+        while not self.cs.eof() and self.cs.peek().isdigit():
+            digits.append(self.cs.read())
         lexeme = ''.join(digits)
-
         return lexeme, int(lexeme)
