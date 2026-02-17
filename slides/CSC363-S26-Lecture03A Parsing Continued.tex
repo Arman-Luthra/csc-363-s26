@@ -1,0 +1,511 @@
+\documentclass[aspectratio=169]{beamer}
+
+% Basic packages
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{subcaption}
+\usepackage{listings}
+\usepackage{multicol}
+\usepackage{tikz}
+\usetikzlibrary{positioning,calc,arrows.meta}
+\usepackage{forest}
+\usetikzlibrary{graphs, graphdrawing}
+
+\usepackage{colortbl}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keepspaces=true,
+  columns=fullflexible,
+  tabsize=2,
+  showstringspaces=false,
+  breaklines=true
+}
+
+% Wabash-style colors
+\definecolor{WabashRed}{RGB}{173,0,0}
+\definecolor{DarkGray}{RGB}{60,60,60}
+
+% Beamer theme: clean and minimal
+\usetheme{default}
+\usecolortheme{default}
+
+% Remove default navigation symbols
+\setbeamertemplate{navigation symbols}{}
+
+% Frame title style: red text, white background, thin rule
+\setbeamercolor{frametitle}{fg=WabashRed,bg=white}
+\setbeamertemplate{frametitle}{%
+  \vspace{0.3em}%
+  \insertframetitle\par
+  \ifx\insertframesubtitle\@empty\relax
+  \else
+    {\small\color{DarkGray}\insertframesubtitle\par}%
+  \fi
+  \vspace{0.3em}%
+  \color{WabashRed}\rule{\linewidth}{0.4pt}%
+}
+
+% Title page style
+\setbeamercolor{title}{fg=WabashRed}
+\setbeamercolor{subtitle}{fg=DarkGray}
+\setbeamercolor{author}{fg=DarkGray}
+\setbeamercolor{date}{fg=DarkGray}
+
+% Custom footline: thin red bar with Wabash College and slide number
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=\paperwidth,ht=2.7ex,dp=1.1ex,left]{footline}%
+      \color{white}%
+      \begingroup
+        \setlength{\fboxsep}{0pt}%
+        \colorbox{WabashRed}{%
+          \parbox[c][2ex][c]{\paperwidth}{%
+            \hspace*{1em}%
+            \small Wabash College%
+            \hfill%
+            \small CSC-363 Lecture 03A%
+            \hfill%
+            \small \insertframenumber{} / \inserttotalframenumber\hspace*{1em}%
+          }%
+        }%
+      \endgroup
+    \end{beamercolorbox}%
+  }%
+}
+
+\setbeamercolor{footline}{bg=WabashRed,fg=white}
+
+% Section title style
+\setbeamercolor{section title}{fg=WabashRed}
+\setbeamertemplate{section page}{%
+  \begin{centering}
+    \vspace{2cm}
+    {\usebeamercolor[fg]{section title}\Large\insertsectionhead\par}
+    \vspace{0.5cm}
+    \color{DarkGray}\rule{0.4\linewidth}{0.6pt}\par
+  \end{centering}
+}
+
+
+
+% Itemize style
+\setbeamertemplate{itemize item}{\color{WabashRed}$\blacktriangleright$}
+\setbeamertemplate{itemize subitem}{\color{WabashRed}\scriptsize$\blacktriangleright$}
+
+% Title information
+\title{CSC-363 Lecture 03A\\Parsing Continued}
+\author{Colin McKinney}
+\date{2 February 2026}
+
+
+\begin{document}
+
+% Title frame
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+
+
+\begin{frame}
+\frametitle{Minor Changes for PA3}
+
+\begin{itemize}
+\item I've changed acdc.py to work on a line-by-line basis.  This will make our lives a little easier for parsing.
+\item No need to change anything in PA2, and, fortunately, no need to change anything about the tokenizer.  
+\item acdc.py produces a new token stream per line instead of one giant token stream.  We'll then pass each of these tokenstreams to be parsed.	
+\end{itemize}
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Running Example}
+Let's use the something like \verb|a = 6*b+7|.  We've seen how this tokenizes:
+
+\par
+\begin{verbatim}
+[varref(a)][assign][intlit(6)][binop(*)][varref(b)][binop(+)][intlit(7)]
+\end{verbatim}
+\par 
+
+We also have drawn simple parse trees by using our brains: 
+
+\begin{tikzpicture}[
+  level distance=12mm,
+  sibling distance=26mm,
+  every node/.style={draw, rounded corners, inner sep=2pt, font=\small, align=center},
+  edge from parent/.style={draw, -latex}
+]
+\node {Assign}
+  child { node {VarRef\\\texttt{a}} }
+  child { node {BinOp\\\texttt{+}}
+    child { node {BinOp\\\texttt{*}}
+      child { node {IntLit\\\texttt{6}} }
+      child { node {VarRef\\\texttt{b}} }
+    }
+    child { node {IntLit\\\texttt{7}} }
+  };
+\end{tikzpicture}
+
+	
+\end{frame}
+
+
+\begin{frame}
+\frametitle{From Tokens to Parsing}
+
+Tokenizer was responsible for:
+\begin{itemize}
+\item Taking character streams and producing tokens in a token stream
+\item Making sure no illegal characters were present	
+\end{itemize}
+
+
+Parser is responsible for:
+\begin{itemize}
+\item Taking token streams, which are linear, and producing a list of ASTs, which are very much not linear.	
+\end{itemize}
+There are three categories of statements we can expect when we parse:
+\begin{itemize}
+\item Print statements: comes from a single token, so easy!
+\item Variable declarations: comes from a single token, so easy!
+\item Assignment statements: must begin with variable name followed by =.  Remaining tokens will be parsed as the expression of what value is assigned to the variable.	
+\end{itemize}	
+\end{frame}
+
+
+\begin{frame}
+\frametitle{The Shunting Yard}
+Idea: parse using two stacks and one queue.
+\begin{itemize}
+	\item The queue is our input token stream.
+	\item The first stack is the operator stack, and handles delimiters and operators
+	\item The second stack handles partial expressions
+\end{itemize}
+The algorithm will take start by taking a token from the queue and deciding which stack it to push it on.  We'll also need to decide when to pop from the stacks.  Visualization: a railroad yard.
+
+\begin{center}
+\includegraphics[scale=0.25]{shunting.png}
+\end{center}
+
+
+\end{frame}
+
+
+\begin{frame}
+Core algorithm:
+
+\lstinputlisting{shunting.tex}
+
+
+	
+\end{frame}
+
+% Requires in your preamble (pick what you already use):
+% \usepackage{xcolor}
+% \usepackage{colortbl}
+
+\begin{frame}[fragile]
+\frametitle{Example Walkthrough: \texttt{a = 6 * b + 7}}
+
+\small
+\textbf{We will parse:} \texttt{6 * b + 7}
+
+\vspace{0.6em}
+
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.25}
+
+\rowcolors{2}{black!3}{white}
+\begin{tabular}{r l l l}
+\rowcolor{black!12}
+\textbf{Step} & \textbf{Token read} & \textbf{Operator stack} & \textbf{Output stack (ASTs)} \\
+
+1 & \textcolor{blue!70!black}{\texttt{6}}
+  & ---
+  & \textcolor{blue!70!black}{\texttt{6}} \\
+
+2 & \textcolor{red!70!black}{\texttt{*}}
+  & \textcolor{red!70!black}{\texttt{*}}
+  & \textcolor{blue!70!black}{\texttt{6}} \\
+
+3 & \textcolor{blue!70!black}{\texttt{b}}
+  & \textcolor{red!70!black}{\texttt{*}}
+  & \textcolor{blue!70!black}{\texttt{6}}, \textcolor{blue!70!black}{\texttt{b}} \\
+
+\rowcolor{yellow!18}
+4 & \textcolor{red!70!black}{\texttt{+}}
+  & \textcolor{red!70!black}{\texttt{+}}
+  & \textcolor{blue!70!black}{\texttt{(6*b)}} \\
+
+5 & \textcolor{blue!70!black}{\texttt{7}}
+  & \textcolor{red!70!black}{\texttt{+}}
+  & \textcolor{blue!70!black}{\texttt{(6*b)}}, \textcolor{blue!70!black}{\texttt{7}} \\
+
+\rowcolor{yellow!18}
+6 & \texttt{end}
+  & ---
+  & \textcolor{blue!70!black}{\texttt{((6*b)+7)}} \\
+\end{tabular}
+
+\vspace{0.8em}
+
+\footnotesize
+\textbf{Notes:}
+\begin{itemize}
+  \item \textcolor{blue!70!black}{Blue} tokens become tiny ASTs and go on the value stack.
+  \item \textcolor{red!70!black}{Red} operators may wait on the operator stack.
+  \item Highlighted rows are \textbf{reductions}: we combine two ASTs with an operator into a bigger AST.
+\end{itemize}
+
+\end{frame}
+
+
+
+
+\begin{frame}[fragile]
+\frametitle{Operator Precedence and Associativity}
+Operator Precedence decides which operator goes first.  For us:
+\begin{itemize}
+\item Highest: exponentiation
+\item Next: multiplication and division
+\item Lowest: addition and subtraction	
+\end{itemize}
+Associativity deals with the situation where we have two operators with equal precedence, such as \verb|3 + 2 + 2| or \verb|3 ^ 2 ^ 2|.  Two ways:
+\begin{itemize}
+\item Left associative: \verb|3 + 2 + 2| is \verb|(3 + 2) + 2|
+\item Right associative: \verb|3 ^ 2 ^ 2| is \verb|3 ^ (2 ^ 2)|	
+\end{itemize}
+Exponentiation is right associative.  The other binary operators are all left associative.
+
+	
+\end{frame}
+
+\begin{frame}
+\frametitle{Dealing with Operator Precedence and Associativity}
+\begin{itemize}
+	\item When we read a new token from the TokenStream, if it's an operator, we need to first look at the top of the operator stack.
+	\item Let's call the two operators op1 and op2: op1 is what we just read from the TokenStream, and op2 is what's at the top of the operator stack.
+	\item If precedence(op2) > precedence(op1), we should pop op2 and push op1.
+	\item If the precedences are the same:
+	\begin{itemize}
+	\item op2 is left associative: pop op2 
+	\item op2 if right associative: don't pop
+	\end{itemize}
+\end{itemize}
+\end{frame}
+
+
+
+\begin{frame}
+\frametitle{Parsing Invariants}
+The following should remain true about parsing at all times:
+\begin{itemize}
+	\item The operator stack should only ever have parentheses and operator tokens.
+	\item The output stack should only ever have ASTNodes. 
+	\item When we reach the end of the TokenStream, there should be precisely one AST in the output stack. 
+	\item The input queue should only ever have Tokens.  It being empty tells us we should be complete.
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{Parsing Errors}
+Under what situations should parsing fail?  Examples:
+\begin{itemize}
+\item First token is something other than varref, print, or intdcl.
+\item If first token is varref, second token must be  assign.
+\item Operand where operator expected.
+\item Operator where operand expected.
+\item Mismatched parentheses.
+\item Reduction attempted with fewer than two nodes (requires two)
+\item Operator stack isn't empty at end of parsing stage (end of TokenStream should trigger reduction)
+\end{itemize}
+
+
+	
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Example: Successful Parsing}
+
+\small
+\textbf{Input:} \texttt{a = 6 + 7} \\
+\textbf{Focus on expression:} \texttt{6 + 7}
+
+\vspace{0.6em}
+
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.25}
+
+\rowcolors{2}{black!3}{white}
+\begin{tabular}{r l c l l}
+\rowcolor{black!12}
+\textbf{Step} & \textbf{Token read} & \textbf{Reduce?} & \textbf{Operator stack} & \textbf{Output stack (ASTs)} \\
+
+1 & \textcolor{blue!70!black}{\texttt{6}}
+  & ---
+  & ---
+  & \textcolor{blue!70!black}{\texttt{6}} \\
+
+2 & \textcolor{red!70!black}{\texttt{+}}
+  & ---
+  & \textcolor{red!70!black}{\texttt{+}}
+  & \textcolor{blue!70!black}{\texttt{6}} \\
+
+3 & \textcolor{blue!70!black}{\texttt{7}}
+  & \texttt{no}
+  & \textcolor{red!70!black}{\texttt{+}}
+  & \textcolor{blue!70!black}{\texttt{6}}, \textcolor{blue!70!black}{\texttt{7}} \\
+
+\rowcolor{green!18}
+4 & \texttt{end}
+  & \texttt{yes}
+  & ---
+  & \textcolor{blue!70!black}{\texttt{(6+7)}} \\
+
+\end{tabular}
+
+\vspace{0.8em}
+
+\footnotesize
+\textbf{Why this succeeds:}
+\begin{itemize}
+  \item The operator \texttt{+} eventually finds two operands.
+  \item End-of-input forces a reduction.
+  \item The expression collapses to \textbf{exactly one AST}.
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Example: When Parsing Fails}
+
+\small
+\textbf{Input:} \texttt{a = 6 +} \\
+\textbf{Focus on expression:} \texttt{6 +}
+
+\vspace{0.6em}
+
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.25}
+
+\rowcolors{2}{black!3}{white}
+\begin{tabular}{r l c l l}
+\rowcolor{black!12}
+\textbf{Step} & \textbf{Token read} & \textbf{Reduce?} & \textbf{Operator stack} & \textbf{Output stack (ASTs)} \\
+
+1 & \textcolor{blue!70!black}{\texttt{6}}
+  & ---
+  & ---
+  & \textcolor{blue!70!black}{\texttt{6}} \\
+
+2 & \textcolor{red!70!black}{\texttt{+}}
+  & ---
+  & \textcolor{red!70!black}{\texttt{+}}
+  & \textcolor{blue!70!black}{\texttt{6}} \\
+
+\rowcolor{red!18}
+3 & \texttt{end}
+  & \texttt{yes (fails)}
+  & \textcolor{red!70!black}{\texttt{+}}
+  & \textcolor{blue!70!black}{\texttt{6}} \\
+
+\end{tabular}
+
+\vspace{0.8em}
+
+\footnotesize
+\textbf{Why this fails:}
+\begin{itemize}
+  \item End-of-input forces a reduction.
+  \item The operator \texttt{+} requires \textbf{two operands}.
+  \item Only one AST is available on the output stack.
+\end{itemize}
+
+\vspace{0.4em}
+\textbf{Conclusion:} Reduction is required but cannot be performed.
+
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Example: Successful Parsing (More Complex)}
+
+\small
+\textbf{Input:} \texttt{a = 6 * b + 7} \\
+\textbf{Focus on expression:} \texttt{6 * b + 7}
+
+\vspace{0.6em}
+
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.25}
+
+\rowcolors{2}{black!3}{white}
+\begin{tabular}{r l c l l}
+\rowcolor{black!12}
+\textbf{Step} & \textbf{Token read} & \textbf{Reduce?} & \textbf{Operator stack} & \textbf{Output stack (ASTs)} \\
+
+1 & \textcolor{blue!70!black}{\texttt{6}}
+  & ---
+  & ---
+  & \textcolor{blue!70!black}{\texttt{6}} \\
+
+2 & \textcolor{red!70!black}{\texttt{*}}
+  & ---
+  & \textcolor{red!70!black}{\texttt{*}}
+  & \textcolor{blue!70!black}{\texttt{6}} \\
+
+3 & \textcolor{blue!70!black}{\texttt{b}}
+  & \texttt{no}
+  & \textcolor{red!70!black}{\texttt{*}}
+  & \textcolor{blue!70!black}{\texttt{6}}, \textcolor{blue!70!black}{\texttt{b}} \\
+
+\rowcolor{yellow!18}
+4 & \textcolor{red!70!black}{\texttt{+}}
+  & \texttt{yes (precedence)}
+  & \textcolor{red!70!black}{\texttt{+}}
+  & \textcolor{blue!70!black}{\texttt{(6*b)}} \\
+
+5 & \textcolor{blue!70!black}{\texttt{7}}
+  & \texttt{no}
+  & \textcolor{red!70!black}{\texttt{+}}
+  & \textcolor{blue!70!black}{\texttt{(6*b)}}, \textcolor{blue!70!black}{\texttt{7}} \\
+
+\rowcolor{green!18}
+6 & \texttt{end}
+  & \texttt{yes (end)}
+  & ---
+  & \textcolor{blue!70!black}{\texttt{((6*b)+7)}} \\
+
+\end{tabular}
+
+\vspace{0.8em}
+
+\footnotesize
+\textbf{What this shows:}
+\begin{itemize}
+  \item Reduction can be triggered by \textbf{precedence} (Step 4).
+  \item Reduction is also triggered at \textbf{end-of-input} (Step 6).
+  \item The expression collapses to \textbf{one AST}, so parsing succeeds.
+\end{itemize}
+
+\end{frame}
+
+
+
+
+
+
+
+\end{document}
+
+
+
+
