@@ -1,0 +1,261 @@
+\documentclass[aspectratio=169]{beamer}
+
+% Basic packages
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{subcaption}
+\usepackage{listings}
+\usepackage{multicol}
+\usepackage{tikz}
+\usetikzlibrary{positioning,calc,arrows.meta}
+\usepackage{forest}
+\usetikzlibrary{graphs, graphdrawing}
+
+\usepackage{colortbl}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keepspaces=true,
+  columns=fullflexible,
+  tabsize=2,
+  showstringspaces=false,
+  breaklines=true
+}
+
+% Wabash-style colors
+\definecolor{WabashRed}{RGB}{173,0,0}
+\definecolor{DarkGray}{RGB}{60,60,60}
+
+% Beamer theme: clean and minimal
+\usetheme{default}
+\usecolortheme{default}
+
+% Remove default navigation symbols
+\setbeamertemplate{navigation symbols}{}
+
+% Frame title style: red text, white background, thin rule
+\setbeamercolor{frametitle}{fg=WabashRed,bg=white}
+\setbeamertemplate{frametitle}{%
+  \vspace{0.3em}%
+  \insertframetitle\par
+  \ifx\insertframesubtitle\@empty\relax
+  \else
+    {\small\color{DarkGray}\insertframesubtitle\par}%
+  \fi
+  \vspace{0.3em}%
+  \color{WabashRed}\rule{\linewidth}{0.4pt}%
+}
+
+% Title page style
+\setbeamercolor{title}{fg=WabashRed}
+\setbeamercolor{subtitle}{fg=DarkGray}
+\setbeamercolor{author}{fg=DarkGray}
+\setbeamercolor{date}{fg=DarkGray}
+
+% Custom footline: thin red bar with Wabash College and slide number
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=\paperwidth,ht=2.7ex,dp=1.1ex,left]{footline}%
+      \color{white}%
+      \begingroup
+        \setlength{\fboxsep}{0pt}%
+        \colorbox{WabashRed}{%
+          \parbox[c][2ex][c]{\paperwidth}{%
+            \hspace*{1em}%
+            \small Wabash College%
+            \hfill%
+            \small CSC-363 Lecture 03B%
+            \hfill%
+            \small \insertframenumber{} / \inserttotalframenumber\hspace*{1em}%
+          }%
+        }%
+      \endgroup
+    \end{beamercolorbox}%
+  }%
+}
+
+\setbeamercolor{footline}{bg=WabashRed,fg=white}
+
+% Section title style
+\setbeamercolor{section title}{fg=WabashRed}
+\setbeamertemplate{section page}{%
+  \begin{centering}
+    \vspace{2cm}
+    {\usebeamercolor[fg]{section title}\Large\insertsectionhead\par}
+    \vspace{0.5cm}
+    \color{DarkGray}\rule{0.4\linewidth}{0.6pt}\par
+  \end{centering}
+}
+
+
+
+% Itemize style
+\setbeamertemplate{itemize item}{\color{WabashRed}$\blacktriangleright$}
+\setbeamertemplate{itemize subitem}{\color{WabashRed}\scriptsize$\blacktriangleright$}
+
+% Title information
+\title{CSC-363 Lecture 03B\\Parsing Continued, Continued}
+\author{Colin McKinney}
+\date{4 February 2026}
+
+
+\begin{document}
+
+% Title frame
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+
+\begin{frame}
+\frametitle{Recap}
+
+Recap: we changed the main acdc program so it operates on a line-by-line basis with one statement per line.  Statements can be:
+\begin{itemize}
+	\item Integer declarations
+	\item Print statements
+	\item Assignment statements
+\end{itemize}
+Statements ending per line means that each line of the input file becomes its own CharStream and hence TokenStream, ending with an EOF token.  This fact will be important in exception handling later.
+\end{frame}
+
+\begin{frame}
+\frametitle{Pipeline}
+\begin{itemize}
+	\item Input ac file is read line by line.
+	\item Each line creates a CharStream.
+	\item Each CharStream is passed to the tokenizer to tokenize, returning a TokenStream.
+	\item Each TokenStream is passed to the parser to produce a single AST node.
+	\item Each of these AST nodes is put into a list of AST nodes.  
+	\item For now, we will simply print the AST nodes.  
+	\item Later we'll use tree algorithms to traverse the AST nodes for code generation and semantic analysis:
+	\begin{itemize}
+		\item Semantic analysis: check stuff like whether integers used in a program have been declared
+		\item Code generation: take each AST node and appropriately convert to valid dc instructions
+	\end{itemize}
+\end{itemize}
+
+	
+\end{frame}
+
+
+
+
+\begin{frame}[fragile]
+\frametitle{One line = One AST}
+
+Key policy/invariant: each line of the input file:
+\begin{itemize}
+	\item Produces a CharStream
+	\item Produces a TokenStream (assume valid)
+	\item Is parsed to produce either:
+	\begin{itemize}
+		\item Precisely one AST
+		\item Precisely one Exception (as a ParseError...custom extension to the Exception class)
+	\end{itemize}
+\end{itemize}
+This means that each call to \verb|parse()| will expect to encounter an EOF token.
+	
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Parser Architecture: parse}
+\verb|parse()|: accepts TokenStream, returns AST
+\begin{itemize}
+	\item Decides which of the three valid cases we're in based on first token in each line's TokenStream:
+	\begin{itemize}
+		\item Print statement
+		\item Int declaration
+		\item Assignment (starts with VarRef followed by Assign).  This will call \verb|parse_expression()|.
+	\end{itemize}
+	\item Enforces statement ending with EOF token using \verb|expect()|
+\end{itemize}
+
+	
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Parser architecture: parse expression}
+Called only to handle the material to the RHS of an =.  Not needed for prints/int declarations since they're a single token.
+\begin{itemize}
+	\item Takes in a (partial) TokenStream
+	\item Builds the ASTs using two stacks: opstack and valstack.  Algorithm is our shunting yard method from last time.
+	\item Is responsible for handling operator precedence, associativity, parentheses, etc.  This is where the bulk of the work lies.  
+	\item Calls \verb|reduce()| as appropriate to condense two ASTs and an operator into a new larger AST.
+	\item Deals with parentheses
+\end{itemize}
+
+
+	
+\end{frame}
+
+
+\begin{frame}[fragile]
+\frametitle{Parser architecture: reduce and expect}
+
+Reduce:
+\begin{itemize}
+	\item Takes two ASTs from the valstack and one operator from the opstack, creates a new AST, pushes result onto valstack
+	\item Mostly mechanical with a little bit of error handling
+\end{itemize}
+Expect:
+\begin{itemize}
+	\item Enforces grammar expectations, such as:
+	\begin{itemize}
+		\item Expect operand or lparen after operator
+		\item Expect rparen or operator after operand
+		\item Expect = after initial varref
+		\item Expect varref, intlit, or lparen after assign
+	\end{itemize}	
+	\item Gives a somewhat central place to catch syntax errors
+\end{itemize}
+
+	
+\end{frame}
+
+
+
+\begin{frame}[fragile]
+\frametitle{Shunting-yard: parse expression}
+
+Shunting yard algorithm needs:
+\begin{itemize}
+\item valstack: stack of ASTNodes
+\item opstack: stack of operators and left parentheses
+\item Operator precedence dictionary
+\item Associativity dictionary
+\item List of valid operator tokentypes
+\end{itemize}
+Algorithm body needs to consume a token and decide whether to push an operator onto the opstack, create an ASTNode and push to valstack, or pop/reduce based on parentheses or operator precedence/associativity.  Important: ASSIGN tokens should never reach this function!
+
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{When and How Parsing Fails}
+\begin{itemize}
+	\item Malformed token (shouldn't happen if tokenizing is successful: indicates bug in code, not parser failure)
+	\item Unexpected token
+	\item Missing operand
+	\item Missing operator
+	\item Mismatched parentheses
+	\item Leftover tokens/operators that can't be reduced when we hit EOF
+\end{itemize}
+Raise any parsing error as a ParseError (custom extension of Exception class).  Main acdc.py reports this by writing to output file.  (Can also print to console; helpful when debugging)
+	
+\end{frame}
+
+
+
+
+\end{document}
+
+
+
+
