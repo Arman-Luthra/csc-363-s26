@@ -3,3 +3,4 @@
 *$py.class
 .venv/
 .DS_Store
+.specstory/
